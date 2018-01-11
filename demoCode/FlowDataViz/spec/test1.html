@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<title>流动画测试</title>
+
+	<link rel="stylesheet" href="../lib/leaflet.css">
+
+	<style>
+		html,body{
+			width: 100%;
+			height: 100%;
+			margin: 0;
+		}
+		#map{
+			width: 100%;
+			height: 100%;
+		}
+	</style>
+</head>
+<body>
+	<div id="map"></div>
+	
+	<script src="../lib/leaflet-src.js"></script>
+	<script src="BusLines.js"></script>
+
+	<script>
+		var flowCanvas = document.createElement('canvas');
+		flowCanvas.id='flow';
+		var flowContext;
+		var flowImageData;
+		var flowData;
+
+		var map = L.map('map',{
+    		scrollWheelZoom: false
+		}).setView([39.9, 116.4],12);
+
+		var width = map.getSize().x;
+		var height = map.getSize().y;
+
+		flowCanvas.width = width;
+		flowCanvas.height = height;
+
+		flowContext = flowCanvas.getContext('2d');
+
+		flowContext.strokeStyle = 'rgba(0,150,200,.4)';
+		flowContext.lineWidth = 3;
+		flowContext.fillStlye = '#fff';
+
+		var wait;
+		var flowInterval;
+
+		var paths = [];
+
+		var tilelayer = L.tileLayer('https://cartodb-basemaps-b.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', {
+      		maxZoom: 18,
+      		foo:'far'   
+    	}).addTo(map);
+
+    	var pane = map.createPane('flow');
+		pane.appendChild(flowCanvas);
+
+    	map.on('moveend', function() {
+    		// 移动结束后重绘流动图，清除一些stuff
+    		clearInterval(flowInterval);
+    		flowContext.clearRect(0,0,width,height);
+    		clearTimeout(wait);
+    		wait = setTimeout(getRelief,500);  // 设置重新绘制延迟，以防再次出现移动情况
+		});
+
+		map.on('move', function() {
+			clearInterval(flowInterval);
+    		flowContext.clearRect(0,0,width,height);
+		    // 停止动画，这样在移动过程中不会重绘
+		    clearTimeout(wait);
+		});
+
+		map.on('load', function() {
+			clearTimeout(wait);
+            wait = setTimeout(getRelief,500);
+		});
+
+		map.on('resize', function() {
+			var width = map.getSize().x;
+			var height = map.getSize().y;
+			flowCanvas.width = width;
+			flowCanvas.height = height;
+			clearTimeout(wait);
+            wait = setTimeout(getRelief,500);
+		});
+		function reverseTransform() {
+			var top_left = map.containerPointToLayerPoint([0, 0]);
+			L.DomUtil.setPosition(flowCanvas, top_left);
+		};
+		function getRelief(){
+		    // 停止任何正在运行的 stuff
+		    clearInterval(flowInterval);
+
+		    // 重置画布
+		    flowContext.clearRect(0,0,width,height);
+		    reverseTransform();
+
+		    // 清除以前的路径
+		    paths = [];
+		    for(let i=0;i<buslines.length;i++){
+		    	let path = new Object();
+		    	path.coords = buslines[i].geo;
+		    	path.count = 0;
+		    	path.currentIndex =0;
+		    	paths.push(path);
+		    }
+
+		    drawFlows();
+		}
+    	
+    	function drawFlows() {
+
+		  clearInterval(flowInterval);
+		  
+		  flowInterval = setInterval(function() {
+		    // fade out the existing canvas a little bit. this is what creates the trail effect
+		    flowContext.strokeStyle = 'rgba(0,150,200,.6)';
+			flowContext.lineWidth = 3;
+			flowContext.fillStlye = '#fff';
+		    flowContext.save();
+		    flowContext.globalCompositeOperation = 'destination-out';
+		    flowContext.globalAlpha = 0.1;
+		    flowContext.fillRect(0,0,width,height);
+		    flowContext.restore();
+
+		    // now go through all paths and draw each to its next coordinate
+		    for (var c in paths) {
+		      // if next will be past the end...
+		      if (paths[c].currentIndex + 1 >= paths[c].coords.length) {
+		        if (paths[c].count > 50) {
+		          // only start over if this has run 50 frames. prevents short paths from looping annoyingly quickly
+		          paths[c].currentIndex = 0;
+		          paths[c].count = 0;
+		          paths[c].idle = false;
+		        } else {
+		          // if we're not there yet, wait
+		          paths[c].idle = true;
+		          paths[c].count++;
+		          continue;
+		        }
+		      }
+		      // draw from current point to next point
+		      var x = paths[c].coords[paths[c].currentIndex][0];
+		      var y = paths[c].coords[paths[c].currentIndex][1];
+		      var latlng = L.latLng(y, x);
+              var thispoi = map.latLngToContainerPoint(latlng);
+
+		      paths[c].currentIndex ++;
+		      var newX = paths[c].coords[paths[c].currentIndex][0];
+		      var newY = paths[c].coords[paths[c].currentIndex][1];
+		      var newlatlng = L.latLng(newY, newX);
+              var newpoi = map.latLngToContainerPoint(newlatlng);
+		      flowContext.beginPath();
+		      flowContext.moveTo(thispoi.x, thispoi.y);
+		      flowContext.lineTo(newpoi.x, newpoi.y);
+		      paths[c].count ++;
+		      flowContext.stroke(); 
+		    }
+		  }, 50);
+		}
+		getRelief();
+    	/*var mylayer = L.flowLayer(paths,{}).addTo(map);
+    	setTimeout(mylayer._drawpaths(),5000);*/
+	</script>
+</body>
+</html>
